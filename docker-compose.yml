@@ -1,0 +1,27 @@
+services:
+  codebase-mcp:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persistent storage for vector DB, cloned repos, and hash cache
+      - mcp-data:/data
+      # Mount your config (edit this to point to your repos)
+      - ./config.yaml:/app/config.yaml:ro
+      # If you have local repos you want to index, mount them:
+      # - /path/to/your/repos:/repos:ro
+      # Optional: mount SSH keys for private repo cloning
+      # - ~/.ssh:/root/.ssh:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      # Simple check that the process is running
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/mcp')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # Give time for model download + initial indexing
+
+volumes:
+  mcp-data:

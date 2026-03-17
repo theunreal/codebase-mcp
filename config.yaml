@@ -1,0 +1,31 @@
+# Test configuration — indexing gong-ai4dev repo
+
+repos:
+  - name: gong-ai4dev
+    path: /develop/code/gong-ai4dev
+    extensions: [".py", ".ts", ".js", ".md"]
+
+# Not used for local repos, but needed by config
+repos_dir: /tmp/repos
+
+indexing:
+  interval_minutes: 0  # Manual only for testing
+  max_file_size: 100000
+  skip_dirs:
+    - node_modules
+    - .git
+    - __pycache__
+    - .venv
+    - venv
+    - dist
+    - build
+    - .next
+    - target
+
+embedding:
+  # Use smaller model for faster testing
+  model: "all-MiniLM-L6-v2"
+
+server:
+  host: "0.0.0.0"
+  port: 8080
