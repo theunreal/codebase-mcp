@@ -1,30 +1,24 @@
-# Test configuration — indexing gong-ai4dev repo
-
 repos:
-  - name: gong-ai4dev
-    path: /develop/code/gong-ai4dev
-    extensions: [".py", ".ts", ".js", ".md"]
+  # Local repo (already cloned on the machine)
+  - name: my-app
+    path: /path/to/your/repo
+    extensions: [".py", ".ts", ".js", ".java"]
 
-# Not used for local repos, but needed by config
-repos_dir: /tmp/repos
+  # Remote repo (will be cloned automatically)
+  # - name: my-other-repo
+  #   url: https://github.com/your-org/repo.git
+  #   branch: main
+  #   extensions: [".py", ".ts"]
+
+repos_dir: /data/repos
 
 indexing:
-  interval_minutes: 0  # Manual only for testing
+  interval_minutes: 30
   max_file_size: 100000
-  skip_dirs:
-    - node_modules
-    - .git
-    - __pycache__
-    - .venv
-    - venv
-    - dist
-    - build
-    - .next
-    - target
+  skip_dirs: [node_modules, .git, __pycache__, .venv, venv, dist, build, .next, target]
 
 embedding:
-  # Use smaller model for faster testing
-  model: "all-MiniLM-L6-v2"
+  model: "all-MiniLM-L6-v2"  # Fast, 80MB. For better code search: jinaai/jina-embeddings-v2-base-code (250MB)
 
 server:
   host: "0.0.0.0"
