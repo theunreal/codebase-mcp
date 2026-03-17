@@ -6,11 +6,16 @@ The server indexes repos on startup and on a schedule, then serves
 semantic search queries from any connected client.
 """
 
-import asyncio
+import json
 import threading
 
 import structlog
+import uvicorn
 from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 
 from src.config import AppConfig, load_config
 from src.indexer.manager import run_full_index
@@ -236,6 +241,65 @@ def _schedule_reindex(interval_minutes: int):
     logger.info("reindex_scheduler_started", interval_minutes=interval_minutes)
 
 
+def _run_reindex_background(repo_name: str | None = None):
+    """Run re-indexing in a background thread to not block the webhook response."""
+    def do_reindex():
+        if config is None or store is None:
+            return
+        if repo_name:
+            repos = [r for r in config.repos if r.name == repo_name]
+        else:
+            repos = config.repos
+        subset = AppConfig(
+            repos=repos,
+            repos_dir=config.repos_dir,
+            indexing=config.indexing,
+            embedding=config.embedding,
+            server=config.server,
+        )
+        results = run_full_index(subset, store)
+        for name, count in results.items():
+            logger.info("webhook_reindex_result", repo=name, chunks=count)
+
+    thread = threading.Thread(target=do_reindex, daemon=True)
+    thread.start()
+
+
+async def webhook_reindex(request: Request) -> JSONResponse:
+    """
+    POST /webhook/reindex — trigger re-indexing from CI/CD.
+
+    Body (optional):
+        {"repo": "my-backend"}  — re-index a specific repo
+        {} or empty             — re-index all repos
+
+    Usage in CI/CD:
+        curl -X POST https://your-server:8080/webhook/reindex -H "Content-Type: application/json" -d '{"repo": "my-backend"}'
+    """
+    repo_name = None
+    try:
+        body = await request.json()
+        repo_name = body.get("repo")
+    except Exception:
+        pass  # Empty body = re-index all
+
+    logger.info("webhook_reindex_triggered", repo=repo_name or "all")
+    _run_reindex_background(repo_name)
+
+    return JSONResponse({"status": "reindex_started", "repo": repo_name or "all"})
+
+
+async def health(request: Request) -> JSONResponse:
+    """GET /health — simple health check for load balancers."""
+    total = store.total_chunks() if store else 0
+    repos = store.list_repos() if store else {}
+    return JSONResponse({
+        "status": "healthy",
+        "total_chunks": total,
+        "repos": len(repos),
+    })
+
+
 def main():
     global config, store
 
@@ -260,18 +324,21 @@ def main():
     # Schedule periodic re-indexing
     _schedule_reindex(config.indexing.interval_minutes)
 
-    # Start MCP server over Streamable HTTP
+    # Build combined app: MCP server + webhook + health check
+    app = Starlette(
+        routes=[
+            Route("/health", health, methods=["GET"]),
+            Route("/webhook/reindex", webhook_reindex, methods=["POST"]),
+            Mount("/", app=mcp.streamable_http_app()),
+        ],
+    )
+
     logger.info(
-        "starting_mcp_server",
-        host=config.server.host,
-        port=config.server.port,
-        transport="streamable-http",
-    )
-    mcp.run(
-        transport="streamable-http",
+        "starting_server",
         host=config.server.host,
         port=config.server.port,
     )
+    uvicorn.run(app, host=config.server.host, port=config.server.port)
 
 
 if __name__ == "__main__":
