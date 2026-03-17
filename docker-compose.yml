@@ -10,7 +10,11 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       # If you have local repos you want to index, mount them:
       # - /path/to/your/repos:/repos:ro
-      # Optional: mount SSH keys for private repo cloning
+
+      # --- Git credentials for private repos (pick one) ---
+      # Option 1: HTTPS credentials file (create .git-credentials with: https://USER:TOKEN@github.com)
+      # - ./.git-credentials:/root/.git-credentials:ro
+      # Option 2: SSH keys
       # - ~/.ssh:/root/.ssh:ro
     environment:
       - PYTHONUNBUFFERED=1
