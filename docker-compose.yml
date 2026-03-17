@@ -23,6 +23,8 @@ services:
       - PYTHONUNBUFFERED=1
       # Prevent git from prompting for credentials (fail fast instead)
       - GIT_TERMINAL_PROMPT=0
+      # HuggingFace token for model downloads (get from https://huggingface.co/settings/tokens)
+      # - HF_TOKEN=hf_xxxxxxxxxxxx
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/mcp')"]
