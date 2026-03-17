@@ -3,6 +3,9 @@ services:
     build: .
     ports:
       - "8080:8080"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     volumes:
       # Persistent storage for vector DB, cloned repos, and hash cache
       - mcp-data:/data
@@ -18,14 +21,15 @@ services:
       # - ~/.ssh:/root/.ssh:ro
     environment:
       - PYTHONUNBUFFERED=1
+      # Prevent git from prompting for credentials (fail fast instead)
+      - GIT_TERMINAL_PROMPT=0
     restart: unless-stopped
     healthcheck:
-      # Simple check that the process is running
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/mcp')"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s  # Give time for model download + initial indexing
+      start_period: 120s
 
 volumes:
   mcp-data:
