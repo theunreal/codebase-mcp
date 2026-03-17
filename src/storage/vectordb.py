@@ -29,6 +29,7 @@ class SearchResult:
     end_line: int
     language: str
     score: float
+    imports: str = ""
 
 
 class VectorStore:
@@ -91,6 +92,7 @@ class VectorStore:
                     "start_line": c.start_line,
                     "end_line": c.end_line,
                     "language": c.language,
+                    "imports": c.imports[:500] if c.imports else "",
                 }
                 for c in batch
             ]
@@ -159,10 +161,34 @@ class VectorStore:
                     end_line=meta["end_line"],
                     language=meta["language"],
                     score=score,
+                    imports=meta.get("imports", ""),
                 )
             )
 
         return search_results
+
+    def find_importers(self, symbol_name: str, repo_name: str | None = None) -> list[str]:
+        """Find files whose imports mention a given symbol name."""
+        where_filter: dict = {"imports": {"$contains": symbol_name}}
+        if repo_name:
+            where_filter = {
+                "$and": [{"imports": {"$contains": symbol_name}}, {"repo_name": repo_name}]
+            }
+
+        results = self._collection.get(
+            where=where_filter,
+            include=["metadatas"],
+        )
+
+        # Deduplicate by file path
+        seen: set[str] = set()
+        files: list[str] = []
+        for meta in results["metadatas"]:
+            key = f"{meta['repo_name']}/{meta['file_path']}"
+            if key not in seen:
+                seen.add(key)
+                files.append(key)
+        return files
 
     def get_entity(self, name: str, repo_name: str | None = None) -> list[SearchResult]:
         """

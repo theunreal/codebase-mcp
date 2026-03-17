@@ -25,32 +25,28 @@ store: VectorStore | None = None
 mcp = FastMCP(
     "Codebase Search",
     instructions=(
-        "This server provides semantic search across your organization's codebase. "
-        "Use semantic_search for natural language queries like 'how does auth work'. "
-        "Use get_entity for exact lookups like 'show me the UserService class'. "
-        "Use get_file_skeleton to understand a file's structure without reading all the code. "
-        "Use list_repos to see what repos are indexed."
+        "Search across the organization's codebase. Start with list_repos to see what's indexed. "
+        "Use semantic_search for concept queries ('how does payment processing work'). "
+        "Use get_entity when you know the exact name ('UserService', 'authenticate'). "
+        "get_entity also shows which files import that symbol — use this to trace usage. "
+        "Use get_file_skeleton to see a file's structure without full code. "
+        "Prefer multiple small, focused queries over one broad query."
     ),
 )
 
 
 @mcp.tool()
-def semantic_search(query: str, repo_name: str | None = None, top_k: int = 10) -> str:
+def semantic_search(query: str, repo_name: str | None = None, top_k: int = 5) -> str:
     """
-    Search the codebase using natural language.
+    Search the codebase using natural language. Returns the most relevant code chunks.
 
-    Use this when you need to understand how something works, find implementations,
-    or locate code related to a concept.
-
-    Examples:
-      - "how does authentication work"
-      - "credit balance calculation"
-      - "database connection setup"
+    Use for concept queries: "how does payment processing work", "error handling patterns",
+    "database connection setup". Returns 5 results by default — increase top_k only if needed.
 
     Args:
         query: Natural language description of what you're looking for.
-        repo_name: Optional — filter results to a specific repo.
-        top_k: Number of results to return (default 10).
+        repo_name: Optional — filter to a specific repo.
+        top_k: Number of results (default 5). Keep low to avoid context bloat.
     """
     if store is None:
         return "Error: Server not initialized. Try again in a moment."
@@ -73,14 +69,10 @@ def semantic_search(query: str, repo_name: str | None = None, top_k: int = 10) -
 @mcp.tool()
 def get_entity(name: str, repo_name: str | None = None) -> str:
     """
-    Look up a specific function, class, method, or interface by exact name.
+    Look up a specific function, class, or method by exact name.
+    Also shows which files import/use this symbol — useful for tracing dependencies.
 
-    Use this when you know the name of what you're looking for.
-
-    Examples:
-      - get_entity("UserService")
-      - get_entity("authenticate", repo_name="auth-service")
-      - get_entity("CreditAccount")
+    Falls back to semantic search if no exact match is found.
 
     Args:
         name: Exact name of the function, class, or method.
@@ -93,7 +85,7 @@ def get_entity(name: str, repo_name: str | None = None) -> str:
 
     if not results:
         # Fall back to semantic search if exact match fails
-        results = store.search(name, top_k=5, repo_name=repo_name)
+        results = store.search(name, top_k=3, repo_name=repo_name)
         if not results:
             return f"No entity found matching '{name}'."
         prefix = f"No exact match for '{name}'. Closest semantic matches:\n\n"
@@ -106,6 +98,15 @@ def get_entity(name: str, repo_name: str | None = None) -> str:
         parent = f" (in {r.parent_name})" if r.parent_name else ""
         header = f"### {r.symbol_type} `{r.symbol_name}`{parent} — {location}"
         formatted.append(f"{header}\n```{r.language.lstrip('.')}\n{r.text}\n```")
+
+    # Show which files import this symbol
+    importers = store.find_importers(name, repo_name=repo_name)
+    if importers:
+        formatted.append(f"\n**Imported by** ({len(importers)} files):")
+        for f in importers[:10]:  # Cap at 10 to avoid bloat
+            formatted.append(f"  - {f}")
+        if len(importers) > 10:
+            formatted.append(f"  - ... and {len(importers) - 10} more")
 
     return prefix + "\n\n".join(formatted)
 
