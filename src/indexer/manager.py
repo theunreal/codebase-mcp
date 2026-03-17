@@ -86,26 +86,44 @@ def index_repo(
     )
     logger.info("found_files", repo=repo_config.name, count=len(files))
 
+    # Build set of current file paths (relative) to detect deleted files
+    current_files: set[str] = set()
+    for file_path in files:
+        relative_path = os.path.relpath(file_path, repo_path)
+        current_files.add(relative_path)
+
+    # Remove stale entries: files that were indexed before but no longer exist
+    prefix = f"{repo_config.name}::"
+    stale_keys = [
+        key for key in hash_cache
+        if key.startswith(prefix) and key[len(prefix):] not in current_files
+    ]
+    if stale_keys:
+        # Delete stale chunks from vector DB
+        stale_relative_paths = [key[len(prefix):] for key in stale_keys]
+        store.delete_by_file_paths(repo_config.name, stale_relative_paths)
+        for key in stale_keys:
+            del hash_cache[key]
+        logger.info("removed_stale_files", repo=repo_config.name, count=len(stale_keys))
+
     all_chunks: list[CodeChunk] = []
-    changed = 0
+    changed_files: list[str] = []
 
     for file_path in files:
         current_hash = _file_hash(file_path)
-        cache_key = f"{repo_config.name}::{file_path}"
+        relative_path = os.path.relpath(file_path, repo_path)
+        cache_key = f"{repo_config.name}::{relative_path}"
 
         # Skip unchanged files
         if hash_cache.get(cache_key) == current_hash:
             continue
 
-        changed += 1
+        changed_files.append(relative_path)
         ext = Path(file_path).suffix
 
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 source = f.read()
-
-            # Make file path relative to repo root for cleaner display
-            relative_path = os.path.relpath(file_path, repo_path)
 
             file_chunks = chunk_file(source, relative_path, repo_config.name, ext)
             all_chunks.extend(file_chunks.chunks)
@@ -119,10 +137,14 @@ def index_repo(
         logger.info("no_changes", repo=repo_config.name, total_files=len(files))
         return 0
 
+    # Delete old chunks for changed files before upserting new ones.
+    # This handles renamed/moved functions that would otherwise leave orphans.
+    store.delete_by_file_paths(repo_config.name, changed_files)
+
     logger.info(
         "chunking_complete",
         repo=repo_config.name,
-        changed_files=changed,
+        changed_files=len(changed_files),
         total_chunks=len(all_chunks),
     )
 

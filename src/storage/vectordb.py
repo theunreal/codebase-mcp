@@ -112,6 +112,14 @@ class VectorStore:
         self._collection.delete(where={"repo_name": repo_name})
         logger.info("deleted_repo_chunks", repo_name=repo_name)
 
+    def delete_by_file_paths(self, repo_name: str, file_paths: list[str]) -> None:
+        """Delete all chunks for specific files in a repo (handles renames/deletes)."""
+        for file_path in file_paths:
+            self._collection.delete(
+                where={"$and": [{"repo_name": repo_name}, {"file_path": file_path}]}
+            )
+        logger.info("deleted_file_chunks", repo_name=repo_name, files=len(file_paths))
+
     def search(self, query: str, top_k: int = 10, repo_name: str | None = None) -> list[SearchResult]:
         """
         Semantic search across indexed code.
